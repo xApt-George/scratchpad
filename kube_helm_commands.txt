@@ -1,0 +1,289 @@
+minikube version
+minikube start
+minikube status
+minikube addons enable ingress
+minikube ip # Add this IP to the hosts file and sent the URL to the same in the ingress yaml
+minikube tunnel
+minikube dashboard
+
+
+
+helm list
+helm list --short
+helm install <RELEASE NAME> <directory where to find Chart.yaml> # Installs everything
+helm install dev guestbook --set frontend.config.guestbook_name=DEV
+helm uninstall <RELEASE NAME>                                    # Deletes everything
+helm get manifest demo-guestbook | less
+helm get manifest demo_guestbook
+helm get values
+helm get all <release name> # Gives manifest of all values from parent and children charts
+helm status demo-guestbook
+
+---------------------------
+VALUES
+---------------------------
+# normal way
+	values.yaml
+# other-file.yaml
+	helm install -f file
+# variables
+# this overwrites the values in the values.yaml file
+	helm install --set foo=bar
+# accessed e.g.:
+{{.Values.service.name}}
+from value.yaml file: -- grabs myservice
+service:
+  type: NodePort
+  name:myservice
+  port:80
+  lables:
+   -name:name1
+   -name:name2
+
+you can set these arrays like so like:
+--set service.labels[0].name=foo
+
+To define the structre of the helm values: -- only in helm3
+use a json schema, describes the properties and types required
+a values.schema.json file needs to be stored at the root of your chart directory alongside your values.yaml file
+this file is useful so helm can validate the helm files when using "helm template <chart>" 
+Forexample, you remove the port from the service, you get an error says: 
+- service: port is required
+
+
+##### Chart Data #####
+Template:
+apiVersion: v1
+kind:L service
+metadata:
+  name:{{.Chart.Name}}
+
+chart.yaml:
+version: 0.1.0
+name: mychart
+appVersion: "2.1"
+
+##### Release Data #####
+# Can also grab release info:
+Release.Name
+Release.Namespace
+Release.Service
+Release.Revision
+Release.IsUpgrade
+Release.IsInstall
+
+##### Kubernettes data #####
+Template:
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:   k8s:{{.Capabilities.KubeVersion}}
+Capabilities.APIVersions
+Capabilities.KubeServion.Minor / Major
+
+##### File data #####
+Files are located in the Template directory
+Template:
+apiVersion: v1
+kind: Service
+metadata:
+  annotations: data:{{.Files.Get.conf.ini}}
+
+##### Template data #####
+Template
+Template:
+apiVersion: v1
+kind: Service
+metadata:
+  annotations: tpl:{{.Template.Name}}
+
+Template.Name
+Template.BasePath
+
+---------------------------
+TESTING HELM
+---------------------------
+
+x-www-browser http://frontend.minikube.local
+
+### Static works without K8s cluster ###
+works locally and doesn't contact the kubernettes api, so has fewer features such as, no release name or runtime checks
+helm template <chart>
+
+### Dynamic, real helm install but without commit (generates a release name) ###
+helm install <release> <chart> --debug -dry-run
+helm install <release> <chart> --debug -dry-run 2>&1 | less
+
+-------------------------
+Releasesing a New Version
+-------------------------
+helm upgrade demo-guestbook guestbook
+    Release "demo-guestbook" has been upgraded. Happy Helming!
+    NAME: demo-guestbook
+    LAST DEPLOYED: Mon Feb 27 07:58:45 2023
+    NAMESPACE: default
+    STATUS: deployed
+    REVISION: 2
+    TEST SUITE: None
+
+-------------------------
+ROLLING BACK
+-------------------------
+helm rollback demo-guestbook 1
+    Rollback was a success! Happy Helming!
+helm history demo-guestbook
+REVISION    UPDATED                     STATUS         CHART             APP VERSION   DESCRIPTION
+1           Sun Feb 26 16:05:16 2023    superseded     guestbook-0.1.0   1.0           Install complete
+2           Mon Feb 27 07:58:45 2023    superseded     guestbook-0.1.0   1.1           Upgrade complete
+3           Mon Feb 27 08:10:07 2023    deployed       guestbook-0.1.0   1.0           Rollback to 1
+
+
+
+-------------------------
+Umbrella Helm Chart
+-------------------------
+Give you a heriachy or charts controlled by a single chart (see lab 6)
+└───guestbook
+    │   Chart.yaml
+    │   values.yaml
+    │
+    ├───charts
+    │   ├───backend
+    │   │   │   Chart.yaml
+    │   │   │   values.yaml
+    │   │   │
+    │   │   └───templates
+    │   │           backend-secret.yaml
+    │   │           backend-service.yaml
+    │   │           backend.yaml
+    │   │           ingress.yaml
+    │   │           _helpers.tpl
+    │   │
+    │   ├───database
+    │   │   │   Chart.yaml
+    │   │   │   values.yaml
+    │   │   │
+    │   │   └───templates
+    │   │           mongodb-persistent-volume-claim.yaml
+    │   │           mongodb-persistent-volume.yaml
+    │   │           mongodb-secret.yaml
+    │   │           mongodb-service.yaml
+    │   │           mongodb.yaml
+    │   │           _helpers.tpl
+    │   │
+    │   └───frontend
+    │       │   Chart.yaml
+    │       │   values.yaml
+    │       │
+    │       └───templates
+    │               frontend-configmap.yaml
+    │               frontend-service.yaml
+    │               frontend.yaml
+    │               ingress.yaml
+    │               _helpers.tpl
+    │
+    └───templates
+            ingress.yaml
+            NOTES.txt
+
+
+------------------------
+UNDERSTANDING CHART.YAML
+------------------------
+apiVersion: v2        # Helm version, v2 = Helm3, v1=Helm2
+name: backend
+appVersion: "1.0"     # Application version number
+description: A Helm chart for Guestbook Backend 1.0
+version: 0.1.0        # Helm chart version number
+type: application
+
+------------------------
+Functions and Pipelines (built in list)
+------------------------
+Function		    | Pipeline
+default default_value value | value | default default_value e.g. {{ .Values.service.name | default .Chart.Name }}
+quaote value		    | value | quote
+upper value 	 	    | value | upper
+trunc value 63		    | value | trunc 63      -- often used in helm charts because kubernettes ledgers are limited to 64 characters
+	e.g. {{ .Values.service.name | trunc 63 | trimSuffix "-" }}  trims it down and removes any trailing dash
+trimSuffix "-" value	    | value | trimSuffix "-"
+b64enc value		    | value | b64enc
+	e.g. {{ .Values.mogodbRootPassword | b64enc | quote }} -- returns the password as a string b64 encoded.
+randAlphaNum 10 	    | value | randAlphaNum 10
+toYaml value		    | value | toYaml
+printf format value...	    | list value ... | join "-"
+
+------------------------
+Defining Scope using WITH and END
+------------------------
+spec:
+  {{ with .Values.service }}
+  type: {{ .type }}
+  ports:
+   - port: {{ .port }}
+{{ end }}
+This adds additional charater returns (new lines)
+To remove them add a dash.
+spec:
+  {{ -with .Values.service }}
+  type: {{ .type }}
+  ports:
+   - port: {{ .port }}
+{{ -end }}
+
+Logical Operators are functions
+
+------------------------
+Setting Variables
+------------------------
+{{ $defaultPortName := .Values.defaultPortName }}
+this is useful because when you are with either a Range or With function you don't have scope to things outside of that.
+use the variable like so: {{$defaultPortName}}
+
+------------------------
+Defining templates functions you can re-use INCLUDES
+------------------------
+These are held in the _helpers.tpl file
+{{-define "mychart.fullname" -}}
+{{- if .Values.fullnameOverride -}}
+{{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{- prinf "%s-%s" .Release.Name $name |trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+{{- end -}}
+
+labels:
+  app.kubernetes.io/name: {{ include "mychart.fullname" . }} -- The dot is the scope, a dot saying it passing the root in the template
+
+
+------------------------
+Helm Respositories
+------------------------
+helm get list
+helm repo add
+helm repo remove
+helm search [hub|repo] keyword
+helm insepct [all|readme|chart|values] chart_name
+helm show values chart_name
+helm fetch chart_name
+helm dependancy update chart_name
+
+where.exe kubectl # Shows you where kubectl binary is installed
+kubectl delete all --all
+kubectl version --short  # Used to check client server version are compatible
+kubectl get all
+kubectl get pods
+kubectl get services
+kubectl get ingresses
+kubectl get pod -l app=frontend
+kubectl describe pod -l app=frontend # To check what version is currently running
+kubectl describe ingress xxx
+kubectl describe service xxx
+kubectl describe pod xxx
+kubectl get secrets
+# To see the monifest of the screets file on linux only, decodes from base64 into json
+kubectl get secrets sh.helm.release.v1.demo-guestbook.v1 -o jsonpath="{data.release }" base64 -d | base64 -d | gunzip | json_pp
+(better way is to use helm)
+
+
+
